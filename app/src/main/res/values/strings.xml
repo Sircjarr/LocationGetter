@@ -2,4 +2,11 @@
     <string name="app_name">LocationGetter</string>
     <string name="action_settings">Settings</string>
     <string name="title_activity_maps">Map</string>
+    <string name="roadmap">Roadmap</string>
+    <string name="satellite">Satellite</string>
+    <string name="hybrid">Hybrid</string>
+    <string name="terrain">Terrain</string>
+    <string name="show_all_markers">Show all markers</string>
+    <string name="clear_map">Clear map</string>
+    <string name="tracking_mode">Tracking mode</string>
 </resources>
