@@ -40,13 +40,12 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private GoogleMap mMap;
 
-    // Prevent camera from updating while in use
-    private boolean hasShownInitialPoint = false;
+    int index;
+    private Location lastKnownLocation;
 
     // Tracking mode variables
-    private boolean trackMode = false;
-    private Location lastKnownLocation;
-    private Marker currentLocationMarker;
+    private boolean trackingMode = false;
+    private Marker trackingMarker;
 
     // User-location related objects
     LocationManager locationManager;
@@ -60,6 +59,9 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        Intent intent = getIntent();
+        index = intent.getIntExtra("index", -1);
     }
 
     // Operations to take place once the map is loaded
@@ -67,9 +69,6 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
         mMap.setOnMapLongClickListener(this);
-
-        Intent intent = getIntent();
-        final int index = intent.getIntExtra("index", -1);
 
         // This class provides access to the system location services
         locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
@@ -79,50 +78,23 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             @Override
             public void onLocationChanged(Location location) {
 
-                // Markers will not update after displayed for the first time
-                if (!hasShownInitialPoint) {
-                    if (index == 0) { // Place a marker at the user's location
-
-                        LatLng userLocation = new LatLng(location.getLatitude(), location.getLongitude());
-                        moveCameraTo(userLocation);
-
-                    } else { // Place a marker at the chosen saved address
-
-                        LatLng savedLocation = new LatLng(MainActivity.locations.get(index).getLatitude(), MainActivity.locations.get(index).getLongitude());
-                        moveCameraTo(savedLocation);
-
-                    }
-                    hasShownInitialPoint = true;
-                }
-
                 // Tracking mode operations
-                if (trackMode) {
-                    if (lastKnownLocation == null) {
+                if (trackingMode) {
 
-                        LatLng userLocation = new LatLng(location.getLatitude(), location.getLongitude());
-                        placeTrackingMarker(userLocation);
+                    // Only a marker at the last location
+                    LatLng currentLocation = new LatLng(location.getLatitude(), location.getLongitude());
+                    placeTrackingMarkerAndMove(currentLocation);
 
-                    }
-                    else {
+                    // Draw a line from previous location to current location
+                    LatLng previousLocation = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
+                    mMap.addPolyline(new PolylineOptions()
+                            .add(previousLocation, currentLocation)
+                            .width(5)
+                            .color(Color.YELLOW));
 
-                        // Only a marker at the last location
-                        if (currentLocationMarker != null) {
-                            currentLocationMarker.remove();
-                        }
-                        LatLng userLocation = new LatLng(location.getLatitude(), location.getLongitude());
-                        placeTrackingMarker(userLocation);
-
-                        // Draw a line from previous location to current location
-                        LatLng previous = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
-                        mMap.addPolyline(new PolylineOptions()
-                                .add(previous, userLocation)
-                                .width(5)
-                                .color(Color.YELLOW));
-
-                        // Update lastKnownLocation to current userLocation
-                        lastKnownLocation.setLatitude(userLocation.latitude);
-                        lastKnownLocation.setLongitude(userLocation.longitude);
-                    }
+                    // Update lastKnownLocation to current userLocation
+                    lastKnownLocation.setLatitude(currentLocation.latitude);
+                    lastKnownLocation.setLongitude(currentLocation.longitude);
                 }
             }
             @Override
@@ -134,18 +106,13 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         };
 
         // Permissions check for getting users location
+        // Less than 23 automatically has permission
         if (Build.VERSION.SDK_INT < 23) {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 6000, 2, locationListener);
             lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            placeInitialMarkerAndMove();
         } else {
-            // If don't have permission...
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-            }
-            else {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 6000, 2, locationListener);
-                lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            }
+            checkPermission();
         }
     }
 
@@ -155,18 +122,25 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == 1 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            checkPermission();
+        }
+    }
 
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                {
-                    // Register the LocationListener with the LocationManager
-                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
-                            6000, // minimum time interval between location updates, in milliseconds
-                            2,    // minimum distance between location updates, in meters
-                            locationListener);
+    public void checkPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            {
+                // Register the LocationListener with the LocationManager
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
+                        6000, // minimum time interval between location updates, in milliseconds
+                        2,    // minimum distance between location updates, in meters
+                        locationListener);
 
-                    lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
+                lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                placeInitialMarkerAndMove();
             }
+        }
+        else {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
     }
 
@@ -223,23 +197,41 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         return result;
     }
 
-    // Methods to move camera to the location
-    public void moveCameraTo(LatLng location) {
+    // Methods to move the camera to the location
+    public void placeInitialMarkerAndMove() {
+        if (index == 0) { // Place a marker at the user's location
+            if (lastKnownLocation != null) {
+                LatLng userLocation = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
+                placeAddressMarkerAndMove(userLocation);
+            }
+            else {
+                Toast.makeText(this, "Could not find user location", Toast.LENGTH_LONG).show();
+            }
+        } else { // Place a marker at the chosen saved address
+
+            LatLng savedLocation = new LatLng(MainActivity.locations.get(index).getLatitude(), MainActivity.locations.get(index).getLongitude());
+            placeAddressMarkerAndMove(savedLocation);
+        }
+    }
+
+    public void placeAddressMarkerAndMove(LatLng location) {
 
         String addressName = buildAddressName(location);
 
         mMap.addMarker(new MarkerOptions().position(location).title(addressName)
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA)));
 
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 20)); // Zoom range 2.0 to 21.0
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 18)); // Zoom range 2.0 to 21.0
 
     }
 
-    public void placeTrackingMarker(LatLng location) {
-
-        currentLocationMarker = mMap.addMarker(new MarkerOptions().position(location).title("Tracking")
+    public void placeTrackingMarkerAndMove(LatLng location) {
+        if (trackingMarker != null) {
+            trackingMarker.remove();
+        }
+        trackingMarker = mMap.addMarker(new MarkerOptions().position(location).title("Tracking")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_YELLOW)));
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 20));
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 18));
 
     }
 
@@ -263,11 +255,9 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             // Marker options
             case R.id.show:
                 for (int i = 1; i < MainActivity.locations.size(); i++) {
-
                     LatLng coordinates = new LatLng(MainActivity.locations.get(i).getLatitude(), MainActivity.locations.get(i).getLongitude());
                     mMap.addMarker(new MarkerOptions().position(coordinates).title(MainActivity.places.get(i))
                             .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA)));
-
                 }
                 break;
 
@@ -279,11 +269,16 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
             case R.id.tracking:
                 if (item.isChecked()) {
                     item.setChecked(false);
-                    trackMode = false;
+                    trackingMode = false;
+                }
+                else if (lastKnownLocation != null) {
+                    item.setChecked(true);
+                    LatLng userLocation = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
+                    placeTrackingMarkerAndMove(userLocation);
+                    trackingMode = true;
                 }
                 else {
-                    item.setChecked(true);
-                    trackMode = true;
+                    Toast.makeText(this, "Could not find user location", Toast.LENGTH_LONG).show();
                 }
                 break;
 
@@ -314,5 +309,4 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         return super.onOptionsItemSelected(item);
     }
-
 }
